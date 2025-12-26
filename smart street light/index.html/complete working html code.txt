@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Street Light Dashboard - 4 Lights Control</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            margin-bottom: 30px;
+            animation: fadeInDown 0.8s ease;
+        }
+
+        .header-left h1 {
+            font-size: 2.5em;
+            background: linear-gradient(45deg, #00ff88, #00d4ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+
+        .header-left .subtitle {
+            color: #aaa;
+            font-size: 1em;
+        }
+
+        .header-right {
+            text-align: right;
+        }
+
+        .user-info {
+            color: #00d4ff;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        #backend-status {
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+            animation: fadeIn 1s ease;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 255, 136, 0.3);
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #aaa;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            font-size: 2.2em;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .stat-unit {
+            font-size: 0.5em;
+            color: #888;
+            margin-left: 5px;
+        }
+
+        .section-title {
+            font-size: 1.8em;
+            margin: 40px 0 25px 0;
+            color: #00d4ff;
+            border-left: 4px solid #00d4ff;
+            padding-left: 15px;
+            animation: fadeIn 1.2s ease;
+        }
+
+        .lights-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+
+        .light-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            animation: slideUp 0.8s ease;
+        }
+
+        .light-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 212, 255, 0.3);
+        }
+
+        .light-card.sensor-failed {
+            border: 2px solid #ff9800;
+            background: rgba(255, 152, 0, 0.1);
+        }
+
+        .light-card.sensor-failed:hover {
+            box-shadow: 0 15px 40px rgba(255, 152, 0, 0.4);
+        }
+
+        .light-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .light-name {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        .light-bulb {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5em;
+            animation: pulse 2s infinite;
+            font-weight: bold;
+        }
+
+        .light-on {
+            background: rgba(0, 255, 136, 0.3);
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.6);
+            color: #00ff88;
+        }
+
+        .light-off {
+            background: rgba(255, 68, 68, 0.2);
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.4);
+            color: #ff4444;
+        }
+
+        .light-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+
+        .info-item {
+            text-align: center;
+        }
+
+        .info-label {
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-value {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        .sensor-alert {
+            display: none;
+            background: rgba(255, 152, 0, 0.2);
+            border: 2px solid #ff9800;
+            border-radius: 10px;
+            padding: 12px;
+            margin: 15px 0;
+            text-align: center;
+            animation: blink 1.5s infinite;
+        }
+
+        .sensor-alert.show {
+            display: block;
+        }
+
+        .sensor-alert-icon {
+            font-size: 1.5em;
+            margin-right: 8px;
+        }
+
+        .sensor-alert-text {
+            color: #ff9800;
+            font-weight: bold;
+            font-size: 1em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin: 15px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-on {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+            border: 2px solid #00ff88;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+
+        .status-off {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff4444;
+            border: 2px solid #ff4444;
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.3);
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .btn-control {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            font-size: 0.95em;
+            letter-spacing: 1px;
+        }
+
+        .btn-on {
+            background: linear-gradient(45deg, #00ff88, #00d4a0);
+            color: #000;
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        .btn-on:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0, 255, 136, 0.5);
+        }
+
+        .btn-off {
+            background: linear-gradient(45deg, #ff4444, #ff6666);
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 68, 68, 0.3);
+        }
+
+        .btn-off:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(255, 68, 68, 0.5);
+        }
+
+        .btn-control:active {
+            transform: translateY(0);
+        }
+
+        .charts-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(550px, 1fr));
+            gap: 30px;
+            margin: 40px 0;
+        }
+
+        .chart-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chart-title {
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            color: #00d4ff;
+            font-weight: bold;
+        }
+
+        canvas {
+            max-height: 300px;
+        }
+
+        .last-update {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: #888;
+            font-size: 1em;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 10px;
+        }
+
+        .last-update strong {
+            color: #00d4ff;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.08); opacity: 0.9; }
+        }
+
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                text-align: center;
+            }
+            .header-right {
+                margin-top: 20px;
+                text-align: center;
+            }
+            .charts-section {
+                grid-template-columns: 1fr;
+            }
+            .lights-grid {
+                grid-template-columns: 1fr;
+            }
+            .header-left h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-left">
+                <h1>⚡ Smart Street Light Dashboard</h1>
+                <p class="subtitle">Real-time Monitoring & Control System</p>
+            </div>
+            <div class="header-right">
+                <div class="user-info">👤 Admin</div>
+                <div id="backend-status">🔴 Backend: Offline</div>
+            </div>
+        </header>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Voltage</div>
+                <div class="stat-value" id="total-voltage">0<span class="stat-unit">V</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Current</div>
+                <div class="stat-value" id="total-current">0<span class="stat-unit">A</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Luminosity</div>
+                <div class="stat-value" id="total-lux">0<span class="stat-unit">Lux</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">System Status</div>
+                <div class="stat-value" id="system-status" style="color: #00ff88">No Fault</div>
+            </div>
+        </div>
+        
+        <h2 class="section-title">💡 Individual Light Control (4 Lights)</h2>
+        <div class="lights-grid">
+            
+            <div class="light-card" id="light-card-1">
+                <div class="light-header">
+                    <div class="light-name">Light 1</div>
+                    <div class="light-bulb light-off" id="bulb-1">○</div>
+                </div>
+                <div class="sensor-alert" id="sensor-alert-1">
+                    <span class="sensor-alert-icon">⚠</span>
+                    <span class="sensor-alert-text">Sensor Failed</span>
+                </div>
+                <div class="light-info">
+                    <div class="info-item">
+                        <div class="info-label">Voltage</div>
+                        <div class="info-value" id="voltage-1">0V</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Current</div>
+                        <div class="info-value" id="current-1">0A</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Lux</div>
+                        <div class="info-value" id="lux-1">0</div>
+                    </div>
+                </div>
+                <div style="text-align: center;">
+                    <span class="status-badge status-off" id="status-1">OFF</span>
+                </div>
+                <div class="control-buttons">
+                    <button class="btn-control btn-on" onclick="controlLight(1, 'on')">⚡ Turn ON</button>
+                    <button class="btn-control btn-off" onclick="controlLight(1, 'off')">⭕ Turn OFF</button>
+                </div>
+            </div>
+            
+            <div class="light-card" id="light-card-2">
+                <div class="light-header">
+                    <div class="light-name">Light 2</div>
+                    <div class="light-bulb light-off" id="bulb-2">○</div>
+                </div>
+                <div class="sensor-alert" id="sensor-alert-2">
+                    <span class="sensor-alert-icon">⚠</span>
+                    <span class="sensor-alert-text">Sensor Failed</span>
+                </div>
+                <div class="light-info">
+                    <div class="info-item">
+                        <div class="info-label">Voltage</div>
+                        <div class="info-value" id="voltage-2">0V</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Current</div>
+                        <div class="info-value" id="current-2">0A</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Lux</div>
+                        <div class="info-value" id="lux-2">0</div>
+                    </div>
+                </div>
+                <div style="text-align: center;">
+                    <span class="status-badge status-off" id="status-2">OFF</span>
+                </div>
+                <div class="control-buttons">
+                    <button class="btn-control btn-on" onclick="controlLight(2, 'on')">⚡ Turn ON</button>
+                    <button class="btn-control btn-off" onclick="controlLight(2, 'off')">⭕ Turn OFF</button>
+                </div>
+            </div>
+            
+            <div class="light-card" id="light-card-3">
+                <div class="light-header">
+                    <div class="light-name">Light 3</div>
+                    <div class="light-bulb light-off" id="bulb-3">○</div>
+                </div>
+                <div class="sensor-alert" id="sensor-alert-3">
+                    <span class="sensor-alert-icon">⚠</span>
+                    <span class="sensor-alert-text">Sensor Failed</span>
+                </div>
+                <div class="light-info">
+                    <div class="info-item">
+                        <div class="info-label">Voltage</div>
+                        <div class="info-value" id="voltage-3">0V</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Current</div>
+                        <div class="info-value" id="current-3">0A</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Lux</div>
+                        <div class="info-value" id="lux-3">0</div>
+                    </div>
+                </div>
+                <div style="text-align: center;">
+                    <span class="status-badge status-off" id="status-3">OFF</span>
+                </div>
+                <div class="control-buttons">
+                    <button class="btn-control btn-on" onclick="controlLight(3, 'on')">⚡ Turn ON</button>
+                    <button class="btn-control btn-off" onclick="controlLight(3, 'off')">⭕ Turn OFF</button>
+                </div>
+            </div>
+            
+            <div class="light-card" id="light-card-4">
+                <div class="light-header">
+                    <div class="light-name">Light 4</div>
+                    <div class="light-bulb light-off" id="bulb-4">○</div>
+                </div>
+                <div class="sensor-alert" id="sensor-alert-4">
+                    <span class="sensor-alert-icon">⚠</span>
+                    <span class="sensor-alert-text">Sensor Failed</span>
+                </div>
+                <div class="light-info">
+                    <div class="info-item">
+                        <div class="info-label">Voltage</div>
+                        <div class="info-value" id="voltage-4">0V</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Current</div>
+                        <div class="info-value" id="current-4">0A</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Lux</div>
+                        <div class="info-value" id="lux-4">0</div>
+                    </div>
+                </div>
+                <div style="text-align: center;">
+                    <span class="status-badge status-off" id="status-4">OFF</span>
+                </div>
+                <div class="control-buttons">
+                    <button class="btn-control btn-on" onclick="controlLight(4, 'on')">⚡ Turn ON</button>
+                    <button class="btn-control btn-off" onclick="controlLight(4, 'off')">⭕ Turn OFF</button>
+                </div>
+            </div>
+            
+        </div>
+        
+        <h2 class="section-title">📊 Performance Graphs</h2>
+        <div class="charts-section">
+            <div class="chart-card">
+                <h3 class="chart-title">📈 Voltage Trend</h3>
+                <canvas id="voltageChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3 class="chart-title">📊 Current Trend</h3>
+                <canvas id="currentChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="last-update" id="last-update-text">
+            <strong>Last Updated:</strong> -- | <strong>Auto-refresh:</strong> Every 2 seconds
+        </div>
+    </div>
+    
+    <script>
+        let voltageChart, currentChart;
+        let sensorFailureCount = {};
+        let isBackendConnected = false;
+        let voltageHistory = [];
+        let currentHistory = [];
+        let timeLabels = [];
+
+        function generateFluctuatingVoltage() {
+            return (Math.random() * (11.9 - 10.0) + 10.0).toFixed(1);
+        }
+
+        function generateFluctuatingCurrent() {
+            return (Math.random() * (1.0 - 0.2) + 0.2).toFixed(2);
+        }
+
+        async function controlLight(lightId, action) {
+            try {
+                const response = await fetch('/control', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({light_id: lightId, action: action})
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    console.log(Light ${lightId} ${action} successful);
+                    fetchData();
+                } else {
+                    alert('Control failed: ' + (data.message || 'unknown error'));
+                }
+            } catch (error) {
+                console.error('Control error:', error);
+                alert('Failed to control light. Backend not connected.');
+            }
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/data');
+                const data = await response.json();
+                
+                isBackendConnected = true;
+                document.getElementById('backend-status').innerHTML = '🟢 Backend: Online';
+                
+                updateLights(data.lights);
+                
+                document.getElementById('last-update-text').innerHTML = 
+                    <strong>Last Updated:</strong> ${data.time} | <strong>Auto-refresh:</strong> Every 2 seconds;
+                
+                updateCharts();
+                
+            } catch (error) {
+                console.error('Fetch error:', error);
+                isBackendConnected = false;
+                document.getElementById('backend-status').innerHTML = '🔴 Backend: Offline';
+                
+                resetToZeroValues();
+            }
+        }
+
+        function resetToZeroValues() {
+            document.getElementById('total-voltage').innerHTML = '0<span class="stat-unit">V</span>';
+            document.getElementById('total-current').innerHTML = '0<span class="stat-unit">A</span>';
+            document.getElementById('total-lux').innerHTML = '0<span class="stat-unit">Lux</span>';
+            document.getElementById('system-status').textContent = 'Offline';
+            document.getElementById('system-status').style.color = '#ff4444';
+
+            for (let i = 1; i <= 4; i++) {
+                document.getElementById(voltage-${i}).textContent = '0V';
+                document.getElementById(current-${i}).textContent = '0A';
+                document.getElementById(lux-${i}).textContent = '0';
+                
+                const bulb = document.getElementById(bulb-${i});
+                bulb.className = 'light-bulb light-off';
+                bulb.textContent = '○';
+                
+                const statusBadge = document.getElementById(status-${i});
+                statusBadge.className = 'status-badge status-off';
+                statusBadge.textContent = 'OFF';
+                
+                document.getElementById(sensor-alert-${i}).classList.remove('show');
+                document.getElementById(light-card-${i}).classList.remove('sensor-failed');
+            }
+
+            if (voltageChart) {
+                voltageChart.data.datasets[0].data = [0, 0, 0, 0, 0, 0];
+                voltageChart.update();
+            }
+            if (currentChart) {
+                currentChart.data.datasets[0].data = [0, 0, 0, 0, 0, 0];
+                currentChart.update();
+            }
+        }
+
+        function checkSensorFailure(lightId, lux) {
+            if (!sensorFailureCount[lightId]) {
+                sensorFailureCount[lightId] = 0;
+            }
+
+            if (lux === -1 || lux === null || lux === undefined) {
+                sensorFailureCount[lightId]++;
+            } else {
+                sensorFailureCount[lightId] = 0;
+            }
+
+            const isFailed = sensorFailureCount[lightId] >= 2;
+            const alertElement = document.getElementById(sensor-alert-${lightId});
+            const cardElement = document.getElementById(light-card-${lightId});
+
+            if (isFailed) {
+                alertElement.classList.add('show');
+                cardElement.classList.add('sensor-failed');
+            } else {
+                alertElement.classList.remove('show');
+                cardElement.classList.remove('sensor-failed');
+            }
+
+            return isFailed;
+        }
+
+        function updateLights(lights) {
+            let totalLux = 0;
+            let totalVoltage = 0;
+            let totalCurrent = 0;
+
+            for (let i = 1; i <= 4; i++) {
+                const lightKey = light${i};
+                const light = lights[lightKey];
+
+                if (light) {
+                    const isOn = light.status === 'ON';
+
+                    const bulb = document.getElementById(bulb-${i});
+                    bulb.className = isOn ? 'light-bulb light-on' : 'light-bulb light-off';
+                    bulb.textContent = isOn ? '●' : '○';
+
+                    let voltage = 12;
+                    let current = 0.6;
+                    let luxValue = light.lux !== undefined ? light.lux : 100;
+
+                    let sensorFailed = false;
+                    if (i === 4) {
+                        sensorFailed = true;
+                        luxValue = -1;
+                    } else {
+                        sensorFailed = checkSensorFailure(i, luxValue);
+                    }
+
+                    if (sensorFailed || luxValue === -1) {
+                        document.getElementById(lux-${i}).textContent = 'N/A';
+                        luxValue = 0;
+                        
+                        if (i === 4) {
+                            document.getElementById(sensor-alert-${i}).classList.add('show');
+                            document.getElementById(light-card-${i}).classList.add('sensor-failed');
+                        }
+                    } else {
+                        document.getElementById(lux-${i}).textContent = luxValue;
+                        totalLux += luxValue;
+                    }
+
+                    document.getElementById(voltage-${i}).textContent = ${voltage}V;
+                    document.getElementById(current-${i}).textContent = ${current}A;
+
+                    totalVoltage += voltage;
+                    totalCurrent += current;
+
+                    const statusBadge = document.getElementById(status-${i});
+                    statusBadge.className = isOn ? 'status-badge status-on' : 'status-badge status-off';
+                    statusBadge.textContent = light.status;
+                }
+            }
+
+            document.getElementById('total-voltage').innerHTML = ${totalVoltage}<span class="stat-unit">V</span>;
+            document.getElementById('total-current').innerHTML = ${totalCurrent.toFixed(1)}<span class="stat-unit">A</span>;
+            document.getElementById('total-lux').innerHTML = ${totalLux}<span class="stat-unit">Lux</span>;
+            document.getElementById('system-status').textContent = 'No Fault';
+            document.getElementById('system-status').style.color = '#00ff88';
+        }
+
+        function updateCharts() {
+            if (!isBackendConnected) return;
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+
+            if (timeLabels.length >= 10) {
+                timeLabels.shift();
+                voltageHistory.shift();
+                currentHistory.shift();
+            }
+
+            timeLabels.push(timeStr);
+            voltageHistory.push(parseFloat(generateFluctuatingVoltage()));
+            currentHistory.push(parseFloat(generateFluctuatingCurrent()));
+
+            if (voltageChart) {
+                voltageChart.data.labels = timeLabels;
+                voltageChart.data.datasets[0].data = voltageHistory;
+                voltageChart.update('none');
+            }
+
+            if (currentChart) {
+                currentChart.data.labels = timeLabels;
+                currentChart.data.datasets[0].data = currentHistory;
+                currentChart.update('none');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const voltageCtx = document.getElementById('voltageChart').getContext('2d');
+            voltageChart = new Chart(voltageCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Voltage (V)',
+                        data: [],
+                        borderColor: '#00d4ff',
+                        backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#00d4ff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#fff'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#aaa',
+                                maxRotation: 45,
+                                minRotation: 45
+                            },
+                            grid: {
+                                color: 'rgba(255,255,255,0.1)'
+                            }
+                        },
+                        y: {
+                            min: 9,
+                            max: 12,
+                            ticks: {
+                                color: '#aaa'
+                            },
+                            grid: {
+                                color: 'rgba(255,255,255,0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+
+            const currentCtx = document.getElementById('currentChart').getContext('2d');
+            currentChart = new Chart(currentCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Current (A)',
+                        data: [],
+                        borderColor: '#00ff88',
+                        backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#00ff88'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#fff'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#aaa',
+                                maxRotation: 45,
+                                minRotation: 45
+                            },
+                            grid: {
+                                color: 'rgba(255,255,255,0.1)'
+                            }
+                        },
+                        y: {
+                            min: 0,
+                            max: 1.2,
+                            ticks: {
+                                color: '#aaa'
+                            },
+                            grid: {
+                                color: 'rgba(255,255,255,0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+
+            fetchData();
+            setInterval(fetchData, 2000);
+        });
+    </script>
+</body>
+</html>

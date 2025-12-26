@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+"""
+smart_street_light_complete.py
+Complete Smart Street Light System with:
+- Manual button control via webpage
+- Automatic LDR-based control (dark=ON, bright=OFF)
+- Real-time hardware GPIO control
+- Light 3 sensor fault (default)
+- Buzzer alerts for sensor failures and manual overrides
+
+Installation:
+    pip3 install flask flask-cors
+
+Run:
+    python3 smart_street_light_complete.py
+
+Access: http://YOUR_PI_IP:5000
+"""
+
+import time
+import signal
+import sys
+import threading
+from datetime import datetime
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+
+try:
+    import RPi.GPIO as GPIO
+except (RuntimeError, ModuleNotFoundError):
+    import lgpio as GPIO
+
+# GPIO PINS
+RELAY_PINS = [17, 18, 27, 22]  # Relay control pins
+LDR_PINS = [5, 6, 13, 19]       # LDR sensor pins
+BUZZER_PIN = 23                 # Buzzer pin
+WEB_PORT = 5000
+SAMPLE_INTERVAL = 2
+AUTO_MODE = True
+
+# Manual override tracking
+manual_override = {
+    "light1": False,
+    "light2": False,
+    "light3": False,
+    "light4": False
+}
+
+# Light data storage
+lights_data = {
+    "light1": {"status": "OFF", "lux": 100},
+    "light2": {"status": "OFF", "lux": 100},
+    "light3": {"status": "OFF", "lux": -1}, # Sensor failed
+    "light4": {"status": "OFF", "lux": 100}  
+}
+
+# Buzzer alert tracking
+last_sensor_alert = 0
+sensor_alert_cooldown = 60  # seconds between sensor failure alerts
+
+# Flask app
+app = Flask(_name_)
+CORS(app)
+
+# GPIO Setup
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+
+for pin in RELAY_PINS:
+    GPIO.setup(pin, GPIO.OUT)
+    GPIO.output(pin, GPIO.LOW)
+
+for pin in LDR_PINS:
+    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+# Setup buzzer
+GPIO.setup(BUZZER_PIN, GPIO.OUT)
+GPIO.output(BUZZER_PIN, GPIO.LOW)
+
+# Buzzer control functions
+def buzzer_beep(duration=0.3, times=2, pause=0.1):
+    """Sound buzzer for specified duration and repetitions"""
+    def beep():
+        for _ in range(times):
+            GPIO.output(BUZZER_PIN, GPIO.HIGH)
+            time.sleep(duration)
+            GPIO.output(BUZZER_PIN, GPIO.LOW)
+            if pause > 0 and _ < times - 1:
+                time.sleep(pause)
+    
+    # Run in separate thread to not block main execution
+    threading.Thread(target=beep, daemon=True).start()
+
+def buzzer_sensor_alert():
+    """Alert pattern for sensor failure: 3 short beeps"""
+    buzzer_beep(duration=0.15, times=3, pause=0.1)
+
+def buzzer_manual_override():
+    """Alert pattern for manual override: 2 quick beeps"""
+    buzzer_beep(duration=0.1, times=2, pause=0.05)
+
+def buzzer_startup():
+    """Startup sound: 1 long beep"""
+    buzzer_beep(duration=0.5, times=1)
+
+# Hardware functions
+def turn_light_on(light_index, source="manual"):
+    if 0 <= light_index < len(RELAY_PINS):
+        GPIO.output(RELAY_PINS[light_index], GPIO.LOW)
+        lights_data[f"light{light_index+1}"]["status"] = "ON"
+        print(f"✅ Light {light_index+1} ON ({source})")
+
+def turn_light_off(light_index, source="manual"):
+    if 0 <= light_index < len(RELAY_PINS):
+        GPIO.output(RELAY_PINS[light_index], GPIO.HIGH)
+        lights_data[f"light{light_index+1}"]["status"] = "OFF"
+        print(f"❌ Light {light_index+1} OFF ({source})")
+
+def read_ldr(ldr_index):
+    try:
+        if ldr_index == 2:
+            return -1  # Light 3 sensor failed
+        
+        if 0 <= ldr_index < len(LDR_PINS):
+            ldr_state = GPIO.input(LDR_PINS[ldr_index])
+            return 100 if ldr_state == GPIO.HIGH else 0
+        return -1
+    except Exception as e:
+        print(f"❌ LDR {ldr_index+2} error: {e}")
+        return -1
+
+def update_sensors():
+    global last_sensor_alert
+    sensor_failure_detected = False
+    
+    for i in range(4):
+        lux = read_ldr(i)
+        lights_data[f"light{i+1}"]["lux"] = lux
+        
+        # Check for sensor failure
+        if lux == -1:
+            sensor_failure_detected = True
+    
+    # Alert for sensor failure (with cooldown to avoid spam)
+    if sensor_failure_detected:
+        current_time = time.time()
+        if current_time - last_sensor_alert > sensor_alert_cooldown:
+            buzzer_sensor_alert()
+            last_sensor_alert = current_time
+            print("🔔 BUZZER: Sensor failure alert!")
+
+def auto_control_lights():
+    if not AUTO_MODE:
+        return
+    
+    for i in range(4):
+        light_key = f"light{i+1}"
+        
+        if manual_override[light_key] or i == 3:
+            continue
+        
+        lux = lights_data[light_key]["lux"]
+        current_status = lights_data[light_key]["status"]
+        
+        if lux == 0 and current_status == "OFF":
+            turn_light_on(i, source="auto-LDR")
+        elif lux > 0 and current_status == "ON":
+            turn_light_off(i, source="auto-LDR")
+
+def print_status():
+    print("\n" + "="*70)
+    print(f"Status - {time.strftime('%H:%M:%S')}")
+    print("="*70)
+    for i in range(4):
+        light_key = f"light{i+1}"
+        status = lights_data[light_key]["status"]
+        lux = lights_data[light_key]["lux"]
+        mode = "🔒 MANUAL" if manual_override[light_key] else "🤖 AUTO"
+        
+        if lux == -1:
+            lux_str = "FAILED"
+            symbol = "⚠"
+        elif lux == 0:
+            lux_str = "0 (DARK)"
+            symbol = "🌙"
+        else:
+            lux_str = f"{lux} (BRIGHT)"
+            symbol = "☀"
+        
+        print(f"💡 Light {i+1}: {status:3s} | {lux_str:15s} {symbol} | {mode}")
+    print("="*70)
+
+# Flask routes
+@app.route('/')
+def index():
+    return send_from_directory('.', 'dashboard.html')
+
+@app.route('/api/data')
+def get_data():
+    return jsonify({
+        'lights': lights_data,
+        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'success': True
+    })
+
+@app.route('/control', methods=['POST'])
+def control_light():
+    try:
+        data = request.json
+        light_id = int(data.get('light_id'))
+        action = data.get('action', '').lower()
+        
+        if light_id < 1 or light_id > 4:
+            return jsonify({'success': False, 'message': 'Invalid light_id'}), 400
+        
+        if action not in ['on', 'off']:
+            return jsonify({'success': False, 'message': 'Invalid action'}), 400
+        
+        light_key = f"light{light_id}"
+        manual_override[light_key] = True
+        
+        # Sound buzzer for manual override
+        buzzer_manual_override()
+        print(f"🔔 BUZZER: Manual override for Light {light_id}")
+        
+        def clear_override():
+            time.sleep(30)
+            manual_override[light_key] = False
+            print(f"🔓 Light {light_id} → AUTO mode")
+        
+        threading.Thread(target=clear_override, daemon=True).start()
+        
+        if action == 'on':
+            turn_light_on(light_id - 1, source="web-button")
+        else:
+            turn_light_off(light_id - 1, source="web-button")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Light {light_id} {action.upper()} (Manual 30s)',
+            'light_id': light_id,
+            'action': action,
+            'new_status': lights_data[light_key]["status"]
+        })
+        
+    except Exception as e:
+        print(f"❌ Control error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# Hardware monitoring loop
+def hardware_loop(stop_event):
+    print("\n🔧 Hardware monitoring started")
+    print("🤖 Auto LDR control ENABLED")
+    print("🔔 Buzzer alerts ENABLED\n")
+    
+    while not stop_event.is_set():
+        update_sensors()
+        auto_control_lights()
+        print_status()
+        time.sleep(SAMPLE_INTERVAL)
+
+# Main
+def main():
+    stop_event = threading.Event()
+    
+    def handle_sigterm(signum, frame):
+        print("\n\n🛑 Shutting down...")
+        stop_event.set()
+        
+        print("💡 Turning off all lights...")
+        for pin in RELAY_PINS:
+            GPIO.output(pin, GPIO.LOW)
+        
+        # Turn off buzzer
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+        
+        GPIO.cleanup()
+        print("✅ Cleanup complete\n")
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, handle_sigterm)
+    signal.signal(signal.SIGTERM, handle_sigterm)
+
+    # Startup buzzer beep
+    buzzer_startup()
+    print("🔔 BUZZER: System starting up!")
+
+    hardware_thread = threading.Thread(target=hardware_loop, args=(stop_event,))
+    hardware_thread.daemon = True
+    hardware_thread.start()
+
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        pi_ip = s.getsockname()[0]
+        s.close()
+    except:
+        pi_ip = "localhost"
+
+    print("\n" + "="*80)
+    print("🚀 Smart Street Light System - READY")
+    print("="*80)
+    print(f"🌐 Dashboard: http://{pi_ip}:{WEB_PORT}")
+    print(f"🌐 Local: http://localhost:{WEB_PORT}")
+    print(f"\n📡 GPIO Config:")
+    print(f"   Relay:  {RELAY_PINS}")
+    print(f"   LDR:    {LDR_PINS}")
+    print(f"   Buzzer: {BUZZER_PIN}")
+    print(f"\n✅ Features:")
+    print(f"   • Manual control via webpage buttons")
+    print(f"   • Auto LDR control (dark→ON, bright→OFF)")
+    print(f"   • Lights 1-4: 12V, 0.6A, LDR-based lux")
+    print(f"   • Light 3: Sensor failed (N/A)")
+    print(f"   • Manual override: 30s then auto")
+    print(f"   • Real-time updates every 2s")
+    print(f"   • Buzzer alerts:")
+    print(f"     - 1 long beep: System startup")
+    print(f"     - 2 quick beeps: Manual override")
+    print(f"     - 3 short beeps: Sensor failure (every 60s)")
+    print(f"\nPress Ctrl+C to stop")
+    print("="*80 + "\n")
+
+    try:
+        app.run(host='0.0.0.0', port=WEB_PORT, debug=False, use_reloader=False)
+    except KeyboardInterrupt:
+        handle_sigterm(None, None)
+    finally:
+        stop_event.set()
+        for pin in RELAY_PINS:
+            GPIO.output(pin, GPIO.LOW)
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+        GPIO.cleanup()
+if _name_ == "_main_":
+    main()
